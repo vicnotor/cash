@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define MBIG 1000000000
 #define MSEED 161803398

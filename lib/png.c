@@ -1,4 +1,4 @@
-#include <strings.h>
+#include <string.h>
 #include <png.h>
 #include "cash.h"
 

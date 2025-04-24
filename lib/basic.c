@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "cash.h"
 
 FILE *parfile;

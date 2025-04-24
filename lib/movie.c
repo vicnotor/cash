@@ -1,3 +1,6 @@
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "cash.h"
 
 extern int nrow, ncol, graphics, scale;

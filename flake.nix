@@ -56,7 +56,6 @@
 
         src = ./.;
 
-        nativeBuildInputs = [pkgs.pkg-config];
         buildInputs = with pkgs; [
           gcc
           xorg.libX11
@@ -65,22 +64,14 @@
         ];
 
         # Set INSTALL_ROOT to $out so the Makefile install goes into the right place
-        makeFlags = ["INSTALL_ROOT=$(out)"];
-
-        buildPhase = ''
-          make
-        '';
+        makeFlags = ["INSTALL_ROOT=$(out)" "SRCDIR=lib"];
 
         installPhase = ''
-          mkdir -p $out/include
           mkdir -p $out/lib
-          cp lib/cash.h $out/include/
+          mkdir -p $out/include
           cp libcash.a $out/lib/
-          ranlib $out/lib/libcash.a
+          cp lib/cash.h $out/include/
         '';
-
-        # Optional: clean up leftover build files
-        dontInstall = false;
       };
 
       cash = default;

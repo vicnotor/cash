@@ -1,0 +1,132 @@
+                Installing CASH.
+								
+The easiest way to find CASH is via the web-page:
+
+"http://www-binf.bio.uu.nl/~rdb/software.html"
+
+To extract the tarfile and to compile CASH:
+
+Uncompress the tarfile:             uncompress cashXXX.tar.Z
+Extract the tarfile:                tar xvof cashXXX.tar
+Go into the library directory:      cd lib
+Make the library:                   make all
+
+Read the install entry in the makefile to set the
+include and lib directory where you want to install CASH.
+
+Then:
+To install libcash.a and cash.h:    make install
+Go into the examples directory:     cd ../examples
+
+Check the makefile, and edit it so it finds the CASH library.
+
+Make the Game of Life example:      make life
+Execute the Game of Life:           life
+
+Have fun with it.
+
+Rob J. De Boer
+Theoretical Biology
+Utrecht University
+Padualaan 8
+3584 CH  Utrecht
+Email:      R.J.DeBoer@bio.uu.nl
+WWW:        http://theory.bio.uu.nl/~rdb
+
+=======================================================================
+History:
+
+cash 2.01 (June 2004):
+- cleaned up a bug in PlaneFree()
+Otherwise identical to cash2003.
+
+Differences between CASH version 2003 and earlier versions
+
+1. CASH was upgraded to ANSI C
+2. CASH was made compatible with C++ by adding
+   #ifdef __cplusplus extern "C" { #endif to the cash.h file
+3. The Motion function was debugged and now uses the Margolus algorithm
+
+With thanks to Ludo Pagie and Roeland Merks
+
+=======================================================================
+
+Differences between CASH version 2000 and earlier versions
+
+1. CASH now makes .png files for you.
+2. A bug in ColorRandom was removed
+
+=======================================================================
+
+Differences between CASH version 99 and earlier versions
+
+1. The CASH library now supports visuals other than 8 bit PseudoColor.
+By default, the X11-driver prompts the X11-server for an 8 bit PseudoColor
+visual, but if this not availabe it selects a generic mode supporting all
+sorts of visuals and depths.  The 8 bit PseudoColor mode should be a lot
+faster than the generic mode, but may have the disadvantage of colors 
+swicthing when the mouse moves in and out of the window.
+
+In case you prefer the generic mode, you can make this the default by
+chaing the line static int pseudoCol8 = 1; into static int pseudoCol8 = 0;
+in the lib/x11.c file.
+
+November, 1999.
+
+=======================================================================
+
+Differences between CASH version 95.10 and earlier versions
+
+1. Since I myself never remembered the order of the
+arguments for the colortable routines (ColorTable, 
+ColorRamp, ColorWheel, and ColorRandom) I have changed
+the format into ColorXxxx(starting point, end point, ....);
+
+2. The names of all graphics functions have been made 
+consistent. So all graphics functions (X11, Postscript, and Movies)
+are now allowed for both CASH Planes and for arbitrary 
+unsigned char blocks. For reasons of uniformity the names of
+several routines has unfortunately been changed:
+
+   OpenGraphics        =>      OpenDisplay
+   DisplayAt           =>      PlaneDisplay
+   DisplayPlane        =>      PlaneDisplay
+   DisplayRow          =>      RowDisplay
+   DisplayBlock        =>      BlockDisplay
+   FastDisplayBlock    =>      BlockDisplayFast
+   CloseGraphics       =>      CloseDisplay
+
+   OpenPS              =>      OpenPostscript
+   PlanePS             =>      PlanePostscript
+   DumpPS              =>      PlanePostscript
+   BlockPS             =>      BlockPostscript
+   RowPS               =>      RowPostscript
+   TextPS              =>      TextPostscript
+   PagePS              =>      PagePostscript
+   ClosePS             =>      ClosePostscript
+
+   OpenMV(a,"w")       =>      OpenMovie(a,nrows,ncols)
+   OpenMV(a,"r")       =>      LoadMovie(a,&nrows,&ncols)
+   WriteMV(a)          =>      PlaneMovie(a,row,col,offset)
+   LoadMV              =>      PlayMovie
+
+Also the order of the (x,y) arguments of the above
+routines has been reversed. First sypplu the row and
+then the column where you want to place your graphics.
+
+4. You can use the Perl script cash_upgrade to upgrade
+an old CASH code to version 95.9. Except for the Movie
+calls will old CASH codes still run under version 95.9
+(for different colortables however) because most old
+function names remain present as macros to their new
+counterparts.
+
+5. The BinSum() function has changed. The format
+now is BinSum(a,n,b,c,..,h); where a,b,c..,h are
+Planes and n is an integer telling how many Planes
+are provided as arguments to be summed into Plane a.
+The old BinSum() which had an array of Planes as its
+argument is still available as BinSumOld(a,b[],n);
+
+October, 1995
+

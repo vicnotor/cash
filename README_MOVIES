@@ -1,0 +1,60 @@
+The CASH2000 version allows you to write .png files from planes and
+character arrays.  This is probably more convenient than the previous
+PostScript dumps that CASH can make.  Additionally, the new .png files
+enable you to make movies in any standard format.  We therefore no
+longer encourage the use of the previous Movie functions of CASH.
+
+To make .png files simply do the following:
+
+OpenPNG("directory-name", nrow, ncol);   
+         /* where nrow and ncol give the height and width */
+PlanePNG(a,c);                                               
+         /* where a is a plane and c the offset in the colortable */
+ClosePNG();
+
+PlanePNG() dumps a .png file in the directory specified by OpenPNG();
+If you call PlanePNG() repeatedly, say every time step, the directory
+is filled with frames that can be combined into a movie.
+
+
+==> Some notes on making movies from .png files:
+
+1. Using ImageMagick.
+
+The ImageMagick environment has a program called "animate" that shows
+a set of frames.  Thus "animate *.png" in the directory with the .png
+frames gives a real nice movie. Also try "animate -geometry 200% *.png", 
+and click in the movie window the pop up the animate panel.
+Alternatively, you can first combine all the .png frames into a single
+movie file by "convert *.png movie.mng".
+
+The BAD NEWS is that animate loads the whole movie into memory.
+Because movies tend to be large this blocks all other work on the
+computer and easily leads to a crash of your session.
+
+2. Making MPEG movies.
+
+MPEG is a standard compressed movie format.  The BAD NEWS is that the
+a typical CA simulation has very detailed pixel graphics, which all
+gets blurred when compressed into the MPEG format. The good news that
+almost all systems can read MPEG files.  CASH provides a file called
+"mpeg.par" in the directory made by OpenPNG(), with some suggested
+settings for mpeg2encode. You may play around with these parameters to
+improve the quality of your movie.
+
+To make an MPEG movie your first have to convert the .png files into
+the ppm format. Then call mpeg_encode (or mpeg2enode) using the CASH
+mpeg.par file. Please remove the ppm files afterwards!  For example:
+
+foreach i ( *.png)
+  convert $i $i:r.ppm
+  end
+mpeg2encode mpeg.par movie.mpeg
+mpeg_play movie.mpeg
+rm *.ppm
+
+To make a movie of twice the size you either do
+convert -geometry 200% $i $i.ppm
+or mpeg_play -dither color2 movie.mpeg
+
+

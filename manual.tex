@@ -1,0 +1,902 @@
+\documentclass[12pt]{article}
+\usepackage{fullpage}
+\sloppy
+\setlength{\parskip}{\baselineskip}
+\setlength{\parindent}{0pt}
+\newcommand{\mtt}[1]{\texttt{\\#1\\}}
+
+\title{C A S H\\Cellular Automata in Simulated Hardware}
+\author{Rob J. de Boer \& Alex D. Staritsky,
+\\Theoretical Biology,\\Utrecht University,
+\\Email: \texttt{R.J.DeBoer@bio.uu.nl}}
+\date{This document accompanies version cash-2.01}
+
+\begin{document}
+\maketitle 
+
+\begin{abstract} 
+CASH is a system for the simulation of 2-dimensional Cellular Automata
+(CAs) in a rapid and conceptually elegant way. The system is fast 
+because of clever neighborhood retrieval algorithms, and a fast
+X11-based graphical display.
+The system is elegant because it has a natural parallelism,
+defining all of its operations in terms of the whole array
+of automata. 
+\end{abstract}
+
+\section{Overview}
+The CASH system is inspired on the Cellular Automaton Machine (CAM)
+of Toffoli and Margolus (MIT Press, 1987). 
+CASH simulates part of the
+CAM hardware and provides a similar, slower, but more flexible,
+environment.   The basic idea of CASH is that the CA rules are
+defined in  terms of the entire array of cells of the CA. In CASH
+such an array is called a ``plane''. Any CASH plane can be displayed
+on any full color X11 computer screen.
+
+Most of the functions in the CASH library operate on planes and return a
+plane. An example is the logical function {\tt And(a,b,c)}, where
+{\tt a,b}, and {\tt c} are planes. Calling {\tt And(a,b,c)}
+means that plane {\tt b} and {\tt c} are
+compared and that the result is stored in  plane {\tt a}.
+Plane {\tt a} is thus ``on'' at every position where both
+{\tt plane  b} and {\tt plane c} are ``on''.
+A CASH function typically also returns a pointer to the result. 
+Thus, writing {\tt a = And(a,b,c);} is the same as writing {\tt
+And(a,b,c);}. The former notation is helpful if you want to write
+something like {\tt a = Or(a, And(b,b1,b2), And(c,c1,c2));}.
+
+The best way to learn CASH is to look at the various examples and
+to browse through this reference manual. For more complicated
+applications we advise you through browse through the C-code of
+the library.
+The CASH environment is written in the C programming
+language. Using CASH required little knowledge of C. 
+CASH has special algorithms for fast neighborhood retrieval,
+boundary conditions, and is designed to allow for vectorization
+and/or parallization.
+
+\section{Some CASH examples}
+\subsection{Game of Life}
+The following is a listing of the {\tt life.c} program
+in the {\tt examples} directory:
+%../examples/life.c
+\begin{verbatim}
+
+#include <stdio.h>
+#include <cash.h>
+
+extern int nrow,ncol,scale;
+
+main()
+{
+  int time;
+  TYPE **state, **input;
+
+  nrow = 256;
+  ncol = 256;
+
+  state = New(); input = New();
+
+  ColorTable(0,1,BLACK,WHITE);
+  OpenDisplay("Game of Life",nrow,ncol);
+  Init(state);
+
+  for (time = 1; time <= 10000; time++) {
+    Moore8(input,state);
+    PLANE(
+      state[i][j] = (input[i][j] == 3 ||
+      (input[i][j] == 2 && state[i][j]));
+    );
+    PlaneDisplay(state,0,0,0);
+    if (Mouse()) Init(state);
+  }
+  CloseDisplay();
+}
+\end{verbatim}
+
+Notice in this program that
+\begin{itemize}
+\item The {\tt extern int nrow, ...;} line makes some of the CASH
+options local to this file so that you can change them.
+\item The {\tt TYPE **state ..} line declares two planes
+that are allocated and initialized by the {\tt state = New();} line.
+\item The {\tt ColorTable();} statement defines zero to be black
+and one to be white.
+\item The {\tt OpenDisplay();} statement opens an X11-window
+with the title ``Game of Life'', and with a size of nrow lines
+and ncol columns.
+\item The {\tt state} plane is initialized by the {\tt Init()}
+function which prompts the user for further instructions.
+\item The time is defined by conventional C loop.
+\item The Moore neighborhood of each cell in the {\tt state} plane is
+stored in the {\tt input} plane. 
+\item The {\tt PLANE()} macro defines a loop over the whole
+field, i.e., {\tt i=1, 2, .., nrow} and {\tt j=1, 2, .., ncol}.
+For each {\tt i,j} pair we define the Game of Life rule by a
+conventional C statement {\tt a = (b)}, where {\tt b} is a logical
+expression yielding ``0'' or ``1''. 
+\item The logical expression employs the state and 
+the Moore neighborhood input of each cell.
+\item The {\tt state} plane is plotted by {\tt PlaneDisplay();}
+\item If the user clicks any mouse button, the user is prompted
+to re-initialize the {\tt state} plane.
+\item When time is up, or when the user quits from {\tt Init()},
+the window is closed, and the program terminates.
+\end{itemize}
+
+In the Unix environment this program is compiled and
+excuted by the following commands:
+\mtt{ make life\\life}
+In the examples directory we provides some interesting
+initial configurations for the Game of Life. Try to read
+the {\tt  glider1, glider2, boat} or {\tt boats} files,
+and place them just somewhere in the plane.
+
+\subsection{Majority voting}
+This example first displays a random plane, it then does
+majority voting employing the CASH primitives {\tt Copy(), Moore9()}
+and {\tt GE()}. Finally it takes the ``voted'' plane into
+a voting-rule with ``annealing'' (Toffoli \& Margolus, 1987). 
+The latter is implemented as loop over the plane.
+According to the majority-voting rule each cell adopts
+the state the majority of its neigbors is in.
+The annealing just introduces errors at the critical
+values of the majority function (i.e., at 4 and 5 neighbors).
+
+The following is a listing of the {\tt vote.c} program
+in the {\tt examples} directory:
+%../examples/vote.c
+\begin{verbatim}
+
+#include <stdio.h>
+#include <cash.h>
+
+extern int nrow,ncol;
+
+main(argc, argv)
+int argc; char *argv[];
+{
+  int time, margin;
+  TYPE **a, **b;
+
+  if (argc>1) ReadOptions(argv[1]);
+  a = New(); b = New();
+  margin = nrow/10;
+  OpenDisplay("Majority Vote",nrow+2*margin,3*ncol+4*margin);
+
+  Random(a,0.5);
+  PlaneDisplay(a,margin,margin,0);
+  printf("Number of bits: %ld\n",Total(a));
+
+  for (time = 1; !Equal(a,b) && !Mouse() && time<100; time++) {
+    Copy(b,a);
+    Moore9(a,b);
+    GE(a,a,5);
+    PlaneDisplay(a,margin,2*margin+ncol,0);
+  }
+  printf("Number of bits: %ld\n",Total(a));
+
+  for (time = 1; !Mouse() && time<1000; time++) {
+    Moore9(b,a);
+    PLANE(a[i][j] = (b[i][j] == 4 || b[i][j] >= 6););
+    PlaneDisplay(a,margin,3*margin+2*ncol,0);
+  }
+  printf("Number of bits: %ld\n",Total(a));
+
+  CloseDisplay();
+}
+\end{verbatim}
+
+Notice in this program that
+\begin{itemize}
+\item The main program now has the conventional C
+arguments, and {\tt ReadOptions()} uses this to read
+parameters from the filename given when the program was called.
+\item The {\tt OpenDisplay()} function now opens a
+window which will fit three planes next to each other,
+plus margins around them.
+\item We initialize plane {\tt a} with 50\% bits ``on'';
+this plane is displayed, and the number of bits that are ``on''
+is printed.
+\item The first time loop stops when the previous and
+the current plane are identical, or when the user clicks the mouse,
+or after one hundred time steps.
+\item The three CASH functions save a copy of plane {\tt a}
+in {\tt b}, they store the Moore neighborhood of {\tt b} in {\tt a},
+and check for each point in {\tt a} if it has five or more neighbors.
+The result of this is stored in {\tt a} and is displayed
+on the screen.
+\item At the end of the first loop the total is printed again.
+\item In the next time loop the previous result is modified
+further by annealing.
+The Moore neighborhood of {\tt a} is stored in plane {\tt b}.
+Subsequently we loop over the plane and set plane {\tt a} ``on''
+whenever it has four or more than five neighbors.
+\end{itemize}
+
+Note that the three CASH functions in the first loop 
+could be replaced by
+\texttt{\\Moore9(b,a);\\PLANE(a[i][j] = (b[i][j] >= 5));\\}
+where we however no longer check whether {\tt a} and {\tt b} are equal.
+
+\subsection{Diffussion limited aggregation}
+This example models ``free'' particles moving around by Brownian
+motion which freeze when they find a ``frozen'' particle in their
+immediate (Moore) neigborhood. The free
+and the frozen particles are stored in two separate planes.
+The program further illustrates how user parameters can be read from a parameter
+file, and how one can save Planes as .png for making movies.
+
+The following is a listing of the {\tt dla.c} program
+in the {\tt examples} directory:
+%../examples/dla.c
+\begin{verbatim}
+
+#include <stdio.h>
+#include <cash.h>
+
+extern int scale,nrow,ncol;
+
+main(argc, argv)
+int argc; char *argv[];
+{
+  int i, j, time, margin, movie = 1;
+  TYPE **frozen, **free, **moore, **tmp;
+  float dens = 0.1;
+
+  if (argc>1) {
+    ReadOptions(argv[1]);
+    InDat("%f","dens",&dens);
+    InDat("%d","movie",&movie);
+  }
+
+  margin = nrow/10;
+  ColorTable(16,19,BLACK,WHITE,RED,GREEN);
+  OpenDisplay("Diffussion limited aggregation",nrow+2*margin,3*ncol+4*margin);
+  if (movie) OpenPNG("Frames",nrow,ncol);
+
+  frozen = New(); free = New(); moore = New(); tmp = New();
+
+  frozen[nrow/2][ncol/2] = 1;
+  Random(free,dens);
+
+  printf("Particles: %ld\n",Total(frozen)+Total(free));
+
+  for (time = 1; !Mouse() && time <= 10000; time++) {
+    Motion(free,free,1.0,time);
+    Moore8(moore,frozen);
+    PLANE(
+      if (free[i][j] && moore[i][j] && frozen[i][j] == 0) {
+         frozen[i][j] = free[i][j];
+         free[i][j] = 0;
+      }
+    );
+    PlaneDisplay(frozen,margin,margin,16);
+    PlaneDisplay(free,margin,2*margin+ncol,16);
+    BinSum(tmp,2,frozen,free);
+    PlaneDisplay(tmp,margin,3*margin+2*ncol,16);
+    if (movie) PlanePNG(tmp,16);
+  }
+  printf("Particles: %ld\n",Total(frozen)+Total(free));
+  CloseDisplay();
+  if (movie) ClosePNG();
+}
+\end{verbatim}
+
+Notice in this program that
+\begin{itemize}
+\item That we call {\tt InDat()} to read the floating point
+parameter {\tt dens} and the integer parameter {\tt movie}.
+\item {\tt ColorTable()} here defines four colors.
+The color table entries 16,17,18, and 19 are BLACK, WHITE, RED,
+and GREEN respectively.
+\item The X11 window allows for three planes next to each other.
+\item If {\tt movie==1} a directory is created for saving .png files.
+\item Four planes are allocated, we start with one frozen
+particle in the middle, and with a random distribution of free
+particles. The density of the latter can be changed by the {\tt dens}
+parameter.
+\item The algorithm in the time loop first moves the free
+particles around. 
+\item It subsequently stores the neighborhood of the frozen
+partciles in the plane called {\tt moore}.
+\item Looping over the CA, it checks whether a free particle
+has a frozen particle in its neighborhood but not below itself.
+\item If this is true the free particle freezes.
+\item Both the frozen and the free planes are displayed.
+\item Both planes are combined in the {\tt tmp} plane
+by a binary sum, i.e., {\tt tmp = 2*frozen + free}.
+This combined plane is displayed and written as a .png file.
+\end{itemize}
+
+\section{Advanced topics}
+\subsection{Programming}
+Although the CASH library allows you to define CAs in term of
+operations on planes it is often much faster to write your own
+next state function as a loop over the entire plane.
+CASH provides a macro {\tt PLANE()} which expands to such a loop, i.e.,
+to 
+\mtt{for (i=1; i <= nrow; i++)\\for (j=1; j <= ncol; j++)}
+and then executes its argument for every point in the plane.
+This illustrates that a CASH plane is indexed by {\tt 1..nrow}
+and {\tt 1..ncol}.
+Instead of using the {\tt PLANE()} macro one can of course
+also write a C function incorporating such a loop over its
+{\tt plane} arguments. This is how the CASH library is made.
+
+CASH planes use rows {\tt 0} and {\tt nrow+1} 
+and columns {\tt 0} and {\tt ncol+1}
+for the boundaries.
+The standard neighborhood functions like {\tt Moore9()} and
+{\tt RandomNeighbor()} all make transparent use of the boundaries.
+In case one needs to program one's own neighborhood
+retrieval, one should first set the boundary condition
+by the {\tt Boundaries()} function, e.g.,
+\mtt{Boundaries(b);\\PLANE(a[i][j] = b[i-1][j+1]);}
+Note that this loop will access {\tt b[0][ncol+1]}. 
+This is safe because these boundaries are allocated by {\tt New()} 
+and set correctly by the {\tt Boundaries()} function.
+
+We advise you to make use of the standard neighborhood functions 
+(like {\tt Moore8()}) whenever possible. 
+They are very fast and they take care of the boundary conditions.
+In the Game of Life example we first store the {\tt Moore8()}
+neighborhood in a plane and define our own loop on the basis of 
+the state-plane and the neighborhood-plane.
+This is definitely faster and saver than including the neighborhood
+retrieval in your own loop. 
+
+\subsection{Type definition}
+Functions, and arguments to functions, can be of the type {\sl plane}, 
+{\sl row}, {\sl value},
+{\sl function}, {\sl int}, or {\sl float}. 
+A {\sl plane} is a double array of
+values (e.g., {\tt plane a}, a {\sl row} is a single array of
+values (e.g., {\tt plane a[nrow]}), and a {\sl value} is a single value
+(e.g., {\tt plane a[nrow][ncol]}). The types {\sl int} and {\sl function} are standard
+C types. 
+
+The actual types of the values in the plane can be changed by the
+user in the {\tt cash.h} file. The default type is {\tt int}.
+For instance, one can define the type to be {\tt unsigned char},
+which would allow for integer values from $0\dots255$.
+This nicely corresponds to the 255 colors that are available.
+In fact, the {\tt unsigned char} suffices for most CA applications.
+Note however that CASH does not check for overflow or underflow. 
+This is particularly tricky when one is summing over large
+neighborhoods. For this reason the default value is {\tt int}. 
+
+In case you want to change the type,
+from e.g., {\tt int} to  {\tt unsigned char},
+just change the first line of the {\tt cash.h} file in
+the {\tt cash/lib} directory from
+{\tt typedef int TYPE;} into {\tt typedef unsigned char TYPE;}.
+Subsequently you have to recompile the library by typing
+{\tt make libcash.a} or {\tt make install}.
+
+\subsection{Vectorization/Parallization}
+One of the   objectives for the development of CASH was
+vectorization on a supercomputer. Thus all algorithms in the CASH
+library, including those for the graphical display,  have been
+written such that they can be vectorized by the C-compiler. This
+was tested on a Convex and on a parallel SiliconGraphics machine. 
+In fact, you will find Convex {\tt /*\$dir force\_vector*/}
+directives in the C-code 
+which tell the C-compiler that it is safe to do the subsequent
+loop in parallel. 
+You may have to adapt these statements for
+your own machine (e.g., change the {\tt /*\$dir force\_vector*/}
+into a {\tt \#pragma concurrent});
+In the CASH directory you will find a script {\tt convert}
+and two arguments {\tt force.sed} and {\tt pragma.sed} that will
+change the whole library for you.
+
+To allow for vectorization/parallization avoid the use of
+global variables (like {\tt nrow, ncol}) as controls in loops.
+In the CASH library  we
+assign {\tt nrow} and {\tt ncol} to two local variables
+{\tt nr} and {\tt nc}. This tells the C-compiler that 
+the loop conditions cannot change during the loop.
+
+On some machines single loops are much faster (or easier to
+vectorize/parallize) than double loops. For this reason CASH
+allows you to write loops over the entire plane as a single
+loop. The format is:
+\mtt{
+int i,l;\\
+for (i=first,l=last; i <= l; i++) a[0][i] = b[0][i];
+}
+which copies {\tt plane b} to {\tt plane a}. 
+The global variables {\tt first} and {\tt last} are predefined
+by CASH.
+Note that we again copy the global variable {\tt last}
+to a local variable {\tt l} so that the C-compiler knows that the
+loop control cannot change due to the {\tt a[i] = b[i]}
+assigment (i.e., {\tt last} and {\tt a[][]} could overlap).
+
+\section{Reference Manual}
+
+\subsection{Options/parameters and their default settings}
+Options and parameters can be set using normal C assignments.
+Alternatively they can be read from a file using the 
+{\tt ReadOptions()} function. The following is a listing
+of all options with their default value.
+\mtt{
+int nrow = 100;\\int ncol = 100;}
+Sets the number of rows/columns in the planes.
+\mtt{int boundary = 0;}
+Sets the boundary condition.
+There are three possibilities: wrapped or periodic ({\tt boundary=0;}), 
+fixed ({\tt boundary=1;}), or echo ({\tt boundary=2;}). 
+For the ``echo'' boundary condition the boundary echoes the
+value of the cell checking the boundary.
+\mtt{int boundaryvalue = 0;}
+Sets value of the boundary for fixed boundary conditions.
+\mtt{graphics = 1;}
+Switches the X11 graphics on.
+\mtt{int scale = 1;}
+Scales the graphical output.
+\mtt{int seed = 55;}
+Sets the seed of the psuedo random number series.
+\mtt{int psborder = 1;}
+Switch for plotting borders around planes in PostScript files.
+\mtt{int psreverse = 1;}
+Reverses the ColorRamp from white to black in PostScript files.
+\mtt{int ranmargolus = 1;}
+The {\tt ranmargolus} option allows you to speed up the {\tt Margolus()}
+function if you don't use the random plane. 
+The Margolus function internally calls {\tt Random()} only if {\tt
+ranmargolus = 1}.
+
+\subsection{Basic operations}
+\texttt{plane New();\\}
+Initializes and allocates a plane.
+\mtt{ int PlaneFree(plane a);}
+Terminates and de-allocates a plane.
+\mtt{ plane NewP();}
+Allocates a pointer plane (as returned by the Shift and NoiseBox functions).
+For de-allocating a pointer plane just use the C's standard {\tt free();}.
+\mtt{ plane Fill(plane a, value c);}
+Fills a plane with a constant value, e.g., {\tt Fill(a,3);}.
+\mtt{ long Total(plane a);}
+Returns the number of non-zero cells in a plane.
+\mtt{ int Equal(plane a,plane b);}
+Tests whether two planes are equal.
+\mtt{ int Max(plane a); int Min(plane a);}
+Returns the maximum/minimum value of a plane.
+\mtt{ plane Copy(plane a, plane b);}
+Copies plane {\tt b} to {\tt a}.
+\mtt{ row CopyRow(row a, row b);}
+Copies one row to another.
+\mtt{ plane Motion(plane a, plane b, float r, int time);}
+Particle motion where  {\tt r} is the probability of each particle
+moving North, South, East or West.
+The {\tt time} argument should take even and odd values alternatingly.
+On sequential machines {\tt Motion()} can be used with {\tt a=b}, 
+and a trick to give
+alternate even and odd arguments is the following:
+{\tt Motion(a,a,1.0,odd=!odd);} where odd is an integer.
+
+\subsection{Input/output operations}
+\texttt{ int ReadOptions(char filename[]);\\}
+Opens a file and reads options and parameters from it.
+An option or parameter file has to have each parameter on a different line. 
+The name of the parameter and its value should be separated by
+a space or a tab. An example of a parameter file is
+\mtt{nrow 256\\ncol 256}
+which, when read by {\tt ReadOptions("filename");} sets the size of the
+planes.
+\mtt{ int InDat(char format[], char name[], \&par);}
+Reads a parameter from the file opened by {\tt ReadOptions()}.
+For example, {\tt InDat("\%d", "kill", \&kill);} sets the integer parameter
+{\tt kill}.
+\mtt{ 
+int iPrint(*FILE file, char format[], plane a);\\
+int cPrint(*FILE file, plane a);\\
+int bPrint(*FILE file, plane a);
+}
+Prints a plane in integer/character/binary values into a file.
+\mtt{ int ReadPat(plane a, int row, int col, char filename[]);}
+Reads integer data from a file and copies it into a plane at
+the position {\tt (row,col)}. (See the {\tt gilder} examples files.)
+\mtt{ Init(plane a);}
+Prompts the user to type some instructions how to initialize {\tt plane a}.
+
+\subsection{Random operations}
+CASH implements two functions for getting random numbers,
+and several functions allowing for randomness in planes.
+
+For planes we have
+\mtt{ plane Random(plane a, float r);}
+to fill a plane with random bits, where $0\le {\tt r} \le 1$ determines
+the coverage.
+\mtt{ plane Shake(plane a, plane b);}
+to give every point in the plane a randomly chosen new position.
+\mtt{ plane Normalize(plane a, plane b);}
+to normalize a plane to a coverage of 50\% (by adding or
+deleting randomly chosen bits).
+\mtt{ plane NoiseBox(plane a);}
+to get a {\sl pointer} to a plane with 50\% random bits.
+This uses the very fast NoiseBox algorithm of Toffoli \& Margolus
+(1987).
+Please be {\bf warned} that {\tt NoiseBox} returns a pointer
+to an internal plane of CASH. If you intend to keep the random
+plane for further use make a copy of it,
+e.g., {\tt Copy(b,NoiseBox(a));}
+
+For general random operations use
+\mtt{ int SEED(int i);}
+to set the seed of the pseudo random series,
+\mtt{ double RANDOM();}
+to obtain uniform values between zero and one, and,
+\mtt{ double normal(double mean; double stdev);}
+to obtain values from a normal distribution.
+The functions {\tt RANDOM()} and {\tt SEED()} are defined
+in the {\tt cash.h} file. The default is an algorithm
+for random numbers developed by Knuth (see Numerical Recipes).
+You are free to change it in the header file {\tt cash.h}
+to the UNIX {\tt rand()} which is worse but faster.
+
+\subsection{Logical operations}
+\texttt{
+plane And(plane a, plane b, plane c);\\
+plane Or(plane a, plane b,plane c);\\
+}
+Returns the AND/OR of two planes.   
+\mtt{ plane AndNot(plane a, plane b, plane c);}
+Returns the And of one plane and the complementary of another,
+i.e., {\tt a = (b \&\& !c)}.
+\mtt{ plane Xor(plane a, plane b, plane c);}
+Returns the exclusive Or of two planes.
+\mtt{ plane Not(plane a, plane b);}
+Returns the complementary plane, i.e., {\tt a = (!b)}.
+\mtt{ plane AndCopy(plane a, plane b,plane c);}
+Copies if equal, i.e., {\tt if (b \&\& c) a = c; else a = 0; }.
+
+
+\subsection{Filter operations}
+\texttt{ EQ(plane a, plane b, value c);\\}
+Performs {\tt a = (b == c)}.
+\mtt{ plane NE(plane a, plane b, value c);}
+Performs {\tt a = (b != c)}.
+\mtt{ plane GE(plane a, plane b, value c);}
+Performs {\tt a = (b >= c)}.     
+\mtt{ plane LE(plane a, plane b, value c);}
+Performs {\tt a = (b <= c)}.      
+\mtt{ plane GT(plane a, plane b, value c);}
+Performs {\tt a = (b > c)}.    
+\mtt{ plane LT(plane a, plane b, value c);}
+Performs {\tt a = (b < c)}.   
+\mtt{ plane IN(plane a,plane b,value c,value d);}
+Performs {\tt a = (c <= b <= d)}, e.g., {a = IN(a,b,1,10);}. 
+
+\subsection{Arithmetic operations}
+The arithmetic functions come in two (or more) flavors. 
+For instance, one can sum two planes using the {\tt Sum(a,b,c)}
+function, and one can add a value (e.g., an integer) to
+a plane by using the {\tt SumV(a,b,c)} function.
+\mtt{ 
+plane Sum(plane a, plane b, plane c);\\
+plane SumV(plane a, plane b, value c);\\
+plane Minus(plane a, plane b, plane c);\\
+plane MinusV(plane a, plane b, value c);
+}
+perform $a=b+c$ or $a = b - c$.
+\mtt{ 
+plane Mult(plane a, plane b, plane c);\\
+plane MultV(plane a, plane b, value c);\\
+plane MultF(plane a, plane b, float c);\\
+plane Div(plane a, plane b, plane c);\\
+plane DivV(plane a, plane b, value c);
+}
+perform $a = b \times c$ or $a = b / c$.
+\mtt{ 
+plane Mod(plane a, plane b, plane c);\\
+plane ModV(plane a, plane b, value c);
+}
+perform $a = b \% c$.  
+\mtt{ plane BinSum(plane a, int n, plane b0, b1, .., bn);}
+performs $a = b_0 + 2 b_1 + 4 b_2 + \dots + 2^{n-1}b_{n-1}$.
+Thus the argument {\tt n} tells {\tt BinSum()} how many
+planes should be summed into {\tt plane a}.
+ 
+\subsection{Bitwise operations}
+\texttt{ 
+plane RollRight(plane a, plane b, int c);\\
+plane RollLeft(plane a, plane b, int c);\\
+}
+Bitwise shift right/left.
+\mtt{ plane GetBits(plane a, plane b, int f, int l);}
+Get bits from position f to l.
+\mtt{ plane PutBits(plane a, int p, int v);}
+Set bits starting at position p to value v.
+\mtt{ plane Hamming(plane a, plane b, plane c);}
+Returns the bitwise Hamming distance between two planes.
+
+\section{Neighborhood retrieval}
+CASH implements several Neighborhood functions.
+The basic functions, like the Moore neighborhood,
+are easy to use and are very fast.
+In case you perform the neighborhood retrieval yourself
+you can employ the function
+\mtt{ plane Boundaries(plane a);}
+to set the boundaries according to the boundary-condition.
+
+\subsection{Basic neighborhood functions}
+Denoting a local $3\times 3$ neighborhood as follows
+$$\matrix{NW & N & NE \cr W & C & E \cr SW & S & SE \cr} \ ,$$
+\smallskip
+\mtt{ plane Moore8(plane a, plane b);}
+returns $NW+N+NE+W+E+SW+S+SE$,
+\mtt{ plane Moore9(plane a, plane b);}
+returns $NW+N+NE+W+C+E+SW+S+SE$,
+\mtt{ plane VonNeumann4(plane a, plane b);}
+returns $N+W+E+S$,
+\mtt{ plane VonNeumann5(plane a, plane b);}
+returns $N+W+C+E+S$,
+\mtt{ plane Diagonal4(plane a, plane b);}
+returns $NW+NE+SW+SE$,
+\mtt{ plane Diagonal5(plane a, plane b);}
+returns $NW+NE+C+SW+SE$, and,
+\mtt{ plane RandomNeighbor(plane a, plane b);}
+returns the value of a randomly choosen neighbor in the
+$3\times 3$ neighborhood.
+
+\subsection{The Margolus neighborhood}
+The Margolus neighborhood is based upon 
+$2\times 2$ blocks of the following form
+$$\matrix{CW & OPP \cr C & CCW  \cr} \ .$$
+For a full discussion we refer to Toffoli \& Margolus (1987).
+Margolus neighborhoods can be used for having ``particle
+conservation''. (An alternative being provided in CASH by the {\tt
+Motion()} function). In CASH you define a function
+in terms of the four cells of the Margolus neighborhood
+(i.e., center (C), opposite (OPP), clockwise (CW), and counter
+clockwise (CCW)), and  a random plane. You may suppress the
+actual call to {\tt Random()} with the {\tt ranmargolus} option.
+
+The general syntax of the Margolus utility is
+\mtt{plane Margolus(plane a, plane b, function f, int time);}
+where the function {\tt f} should look like
+\mtt{plane f(plane cnew, plane c, plane cw, plane ccw,\\
+plane opp, plane ran);}
+Within such a function you may use normal CASH functions:
+\mtt{cnew = opp;\\cnew = And(cnew,ccw,ran);}
+Please see the example on Brownian motion in the {\tt examples}
+directory.
+Note that {\tt time} should increase by one every time step.
+At odd and even times CASH selects different $2\times 2$ blocks.
+
+\subsection{Shift operations}
+The basic neighborhood functions are based upon the
+following four primitives. These primitives can be used
+directly. This requires a little care however. The routines
+are very fast because they just return a {\sl pointer} to a location
+in the argument plane. {\bf The problem is that such a shifted plane
+no longer has a boundary!} 
+Thus, writing {\tt c = North(c,North(a,b));} is not allowed. 
+This has to be written as
+{\tt c = North(c,Explode(c,North(a,b)));}, where the explode operation
+makes a full plane of the pointer.
+A second complication is that one cannot use single loops 
+(see the section on Vectorization) on shifted planes.
+Double loops are allowed but one should not assign any new
+values to a shifted plane. One typically just test the value of
+a neighbor and one should not alter a neighbor.
+
+\mtt{ 
+plane North(plane a, plane b); plane South(plane a, plane b);\\
+plane East(plane a, plane b); plane West(plane a, plane b);
+}
+Returns a pointer to a particular neighbor.
+\mtt{ plane[9] Neighbors(plane a[9], plane b);}
+Returns an array of nine pointers to the $3\times 3$ neighborhood.
+Note that you do have to call {\tt NewP()} for all nine elements of the array.
+One can index this array by following predefined indexes: CENTRAL~0,
+NORTH~1, WEST~2,EAST~3, SOUTH~4,
+NORTHWEST~5, NORTHEAST~6, SOUTHWEST~7, SOUTHEAST~8.
+
+\section{Graphics}
+\subsection{X11 Graphics}
+\texttt{int OpenDisplay(char text[]; int row, int col);\\}
+Opens a window of {\tt row} by {\tt col} pixels
+(note that {\tt row} is the number of Y-values and {\tt col}
+is the number of X-values).
+\mtt{int CloseDisplay();}
+Close the X11 window.
+\mtt{ 
+int PlaneDisplay(plane a, int row, int col, int offset);\\
+int RowDisplay(row a, int row, int col, int offset);
+}
+Displays a plane/row at the location {\tt (row,col)} in the window offsetting
+the color table at position offset.
+\mtt{int BlockDisplay(unsigned char a[nr*nc],\\
+int nr, nc, row, col, offset);}
+Displays a block of {\tt nr} by {\tt nc} unsigned characters,
+e.g., any two-dimensional character array,
+at the location {\tt (row,col)} in the window offsetting
+the color table at position offset.
+\mtt{int BlockDisplayFast(unsigned char a[nr*nc],\\int nr, nc, row, col);}
+This is a special call used by the Movie functions for displaying a block
+of data without scaling or offsetting the colortable. You will
+probably never need it.
+\mtt{ int Mouse();}
+Checks for mouse clicks {\tt Mouse();} returns 1, 2, and 3 for
+the left, middle, and right mouse button, respectively.
+
+\subsection{Color}
+Simple functions allow the user to change the color table.
+These functions have to be called before {\tt OpenDisplay()}
+is called. If you don't change the color table you will
+inherit your workstation's color table for the X11 graphics,
+and you will have black and white PostScript graphics.
+This is usually sufficient.
+CASH assumes that you have a colorscreen supporting 256 colors.
+In CASH the following colors are predefined integers:
+BLACK, WHITE, RED, GREEN, BLUE, YELLOW, MAGENTA, GRAY.
+Please check the color.c example.
+
+\mtt{ int ColorTable(int i,j; int k,l,..,m);}
+Enumerate the color table 
+where {\tt i} is the first and {\tt j} is the last
+entry in the color table to be defined.
+Hence you are expected to supply ${\tt j}-{\tt i}+1$ colors
+by the {\tt k,l,..,m} parameters.
+For example {\tt ColorTable(16,17,BLACK,WHITE);} 
+sets color 16 to black, and color 17 to white.
+Using {\tt PlaneDisplay(...,16);} one gets an offset to this
+part of color table.
+\mtt{ int ColorRGB(int i,r,g,b);}
+Sets the color index {\tt i} to the RGB value specificied
+by the {\tt r,g,b} arguments ($0 \le {\tt r,g,b} \le 255$).
+\mtt{ int ColorRamp(int i,j,k);}
+Defines a color ramp from entry  {\tt i} to {\tt j} in the color table,
+where {\tt k} is the color to be scaled. 
+This parameter {\tt k} may be either: BLACK, WHITE, RED, GREEN, BLUE, or GRAY.
+For example {\tt ColorRamp(0,16,RED);} makes a color ramp
+of 17 shades of red.
+\mtt{ int ColorWheel(int i,j);}
+Defines a color wheel from entry  {\tt i} to {\tt j} in the color table.
+\mtt{ int ColorRandom(int i,j);}
+Defines random colors from entry  {\tt i} to {\tt j} in the color table.
+\mtt{ 
+int ColorRead(char filename);\\
+int ColorDump(char filename);
+}
+Read or write the color table as RGB values to a file.
+
+\subsection{PostScript}
+Although CASH has PostScript functions  
+with the same arguments as the X11 graphics functions,
+you will probably find it more convenient to write .png files
+for graphical output (see the section on making Movies).
+\mtt{ int OpenPostscript(char filename[]; int row, int col);}
+Opens a PostScript file with {\tt row} by {\tt col} pixels.
+\mtt{ int ClosePostscript();}
+Closes the file.
+\mtt{ 
+int PlanePostscript(plane a, int row, int col, int offset);\\
+int RowPostscript(plane a, int row, int col, int offseet);
+}
+Dump a plane/row a the location {\tt (row,col)} in the page offsetting
+the color table at position {\tt offset}.
+\mtt{ int BlockPostscript(unsigned char a[nr*nc],\\
+int nr,nc,row,col,offset);}
+Dumps a block of {\tt nr} by {\tt nc} unsigned characters,
+e.g., any two-dimensional array, at the location {\tt (row,col)} in the page
+offsetting the color table at position offset. 
+\mtt{ int TextPostscript(char text[]; int row, int col);}
+Prints some text at the location {\tt (row,col)}
+in the page. 
+\mtt{ int PagePostscript();}
+Starts a new page.
+
+\subsection{Movies}
+CASH is able to save planes as .png files.  This enables
+you to save graphics and to make movies (see the README\_MOVIES file).
+The format is similar to that of the Display routines.
+Please check the {\tt dla.c}  example.
+\mtt{ int OpenPNG(char directoryname[]; int row; int col);}
+Creates a directory and allocates the required memory. 
+\mtt{ int ClosePNG();}
+Closes the PNG-environment and writes an example {\tt mpeg.par} file.
+\mtt{ int PlanePNG(plane a; int offset);}
+Writes a plane as a .png file.
+\mtt{ int BlockPNG(unsigned char a[]; int nrow, ncol, offset);}
+Writes a unsigned char block as a .png file.
+
+\subsection{Old Movie Format}
+CASH is still able to write planes to a compressed file.
+Such a file can be read and download to the screen.
+This allows for fast movies of time consuming simulations.
+Note that these files easily become extremely large.
+The format is similar to that of the Display routines.
+\mtt{ int OpenMovie(char filename[]; int row; int col);}
+Opens a file for writing.
+\mtt{ int LoadMovie(char filename[], int *row; int *col);}
+Open a file for reading.
+\mtt{ int CloseMovie();}
+Closes the file.
+\mtt{ 
+int PlaneMovie(plane a; int row; int col; int offset);\\
+int RowMovie(row a; int row; int col; int offset);
+}
+Writes a plane/row to the file.
+\mtt{ int BlockMovie(unsigned char a[];\\int nr, nc, row, col, offset);}
+Writes a unsigned char block to the file.
+\mtt{ int PlayMovie(int offset);}
+Read an image and displays it on the screen.
+\mtt{ plane MoviePlane(plane a);}
+Copies the last image that {\tt  PlayMovie()} has plotted
+onto the screen into the {\tt plane a}. It is your
+responsibility that {\tt plane a} has the correct dimensions
+(see {\tt New(), nrow, ncol}).
+
+\section{C A S H  examples directory}
+\subsection{Usage}
+Compile CASH programs by employing the UNIX {\tt make} utility.
+The makefile should be edited such that it matches the installation
+of CASH on your system.
+If you have a proper makefile you only need to type
+\mtt{make program\\program}
+or if you want to supply parameters, type {\tt program par}.
+
+\subsection{The examples directory}
+In the examples directory you will find the following files:
+\begin{itemize}
+\item {\tt life.c} the Game of Life example listed above.
+\item {\tt vote.c} the Majority vorting example listed above.
+\item {\tt life.c} the Diffusion limited aggregation listed above.
+\item {\tt margolus.c} See Toffoli and Margolus (MIT Press, 1987).
+Two of their examples in one program: with and without a random plane.
+Which one is chosen depends on the value of the {\tt brownian}
+parameter.
+\item {\tt motion.c} shows an alternative way of doing particle
+motion.
+\item {\tt movie.c} an example of a program reading an old CASH
+movie file and writing .png files.
+\item {\tt color.c}
+Shows how one can modify the colortable by displaying 256 planes.
+\item {\tt moore.c}
+Shows how one achieves a large neighborhood with a roughly
+Gaussian weighting by
+repeatedly calling the standard Moore neighborhood function.
+\item {\tt array.c}
+Shows how one can use CASH to plot unsigned char
+matrices.
+\item {\tt noise.c} compares the speed of the {\tt NoiseBox()} function
+with that of the {\tt Random(a,0.5)} function.
+\end{itemize}
+
+\section{C A S H  Installation}
+Once you have received the compressed {\tt cashXXXX.tar.Z} file
+you uncompress and untar it, go into the {\tt lib} directory,
+and make the library. Check the {\tt install} entry in the
+makefile for setting the {\tt local/lib} and the {\tt local/include}
+entries.
+\begin{verbatim}
+uncompress cashZZZZ.tar.Z
+tar xvof cashXXXXX.tar
+cd cashXXXX/lib
+vi makefile (change the install entry)
+make install
+cd ../examples
+vi makefile (change the local/lib and local/include entries)
+make life
+life
+\end{verbatim}
+This uncompresses and extracts the tarfile, makes the 
+library and installs the library and the include file
+at the place you decide by the install entry.
+
+In the CASH directory you will also find a script
+{\tt cash} that calls the C-compiler with the appropriate
+libraries.  Edit it and copy it to your {\tt local/bin}
+directory.
+
+\newpage
+\setlength{\parskip}{0pt}
+\tableofcontents
+
+\end{document}
